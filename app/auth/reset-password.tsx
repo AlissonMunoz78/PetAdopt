@@ -135,8 +135,6 @@ export default function ResetPasswordScreen() {
           activeOpacity={0.85}
         >
           {loading ? (
-      import { useLocalSearchParams, useRouter } from "expo-router";
-      import { useMemo } from "react";
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.btnText}>Actualizar contraseña</Text>
