@@ -11,8 +11,6 @@ export interface ChatMessage {
 }
 
 export interface GeminiMessage {
-  role: 'user' | 'model';
-  parts: Array<{
-    text: string;
-  }>;
+  role: string;
+  content: string;
 }

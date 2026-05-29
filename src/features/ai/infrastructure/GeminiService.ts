@@ -1,12 +1,12 @@
 /**
  * CAPA: Infrastructure
- * Servicio para integración con Google Gemini API
+ * Servicio para integración con Groq API
  */
 
 import { GeminiMessage } from '../domain/entities/ChatMessage';
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 const SYSTEM_PROMPT = `Eres un asistente veterinario virtual de PetAdopt. Solo respondes preguntas sobre salud, cuidados, alimentación y bienestar de mascotas. Responde siempre en español de forma clara y empática. Si la pregunta no es sobre mascotas, redirige amablemente al tema.`;
 
@@ -19,52 +19,47 @@ export class GeminiService {
       throw new Error('EXPO_PUBLIC_GEMINI_API_KEY no configurada');
     }
 
-    // Agregar mensaje del usuario al historial
     this.conversationHistory.push({
       role: 'user',
-      parts: [{ text: userMessage }],
+      content: userMessage,
     });
 
-    // Mantener solo los últimos MAX_HISTORY mensajes
     if (this.conversationHistory.length > this.MAX_HISTORY) {
       this.conversationHistory = this.conversationHistory.slice(-this.MAX_HISTORY);
     }
 
     try {
-      const requestBody = {
-        contents: this.conversationHistory,
-        systemInstruction: {
-          parts: [{ text: SYSTEM_PROMPT }],
-        },
-      };
-
-      const response = await fetch(`${API_URL}?key=${API_KEY}`, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_KEY}`,
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            ...this.conversationHistory,
+          ],
+          max_tokens: 1000,
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.error?.message || `Error Gemini: ${response.status}`
-        );
+        const errorData = await response.json() as any;
+        throw new Error(errorData.error?.message || `Error Groq: ${response.status}`);
       }
 
-      const data = await response.json();
-      const assistantMessage =
-        data.candidates?.[0]?.content?.parts?.[0]?.text ||
-        'No pude generar una respuesta';
+      const data = await response.json() as any;
+      const assistantMessage = data.choices[0].message.content;
 
-      // Agregar respuesta del asistente al historial
       this.conversationHistory.push({
-        role: 'model',
-        parts: [{ text: assistantMessage }],
+        role: 'assistant',
+        content: assistantMessage,
       });
 
       return assistantMessage;
+
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error desconocido';
       throw new Error(`Error al conectar con Gemini: ${message}`);
