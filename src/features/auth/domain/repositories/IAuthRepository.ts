@@ -8,6 +8,7 @@ export interface IAuthRepository {
     password: string,
     username: string,
     role: "adopter" | "shelter",
+    redirectTo?: string,
   ): Promise<User>;
   resetPassword(email: string, redirectTo: string): Promise<void>;
   logout(): Promise<void>;

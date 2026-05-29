@@ -1,47 +1,102 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import LottieView from 'lottie-react-native';
-import { supabase } from '../../src/shared/infrastructure/supabase/client';
-import { useAuthStore } from '../../src/features/auth/presentation/store/authStore';
-import LottieError from '../../assets/animations/e598df70-1153-11ee-99a5-af0fb90d62d0.json'; // O la ruta que corresponda
-import LottieDog from '../../assets/animations/tu-perrito.json';
+import { useLocalSearchParams, useRouter } from "expo-router";
+import LottieView from "lottie-react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+    ActivityIndicator,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import LottieError from "../../assets/animations/e598df70-1153-11ee-99a5-af0fb90d62d0.json"; // O la ruta que corresponda
+import LottieDog from "../../assets/animations/tu-perrito.json";
+import { buildSafeNextPath } from "../../src/features/auth/presentation/utils/authRedirect";
+import { supabase } from "../../src/shared/infrastructure/supabase/client";
 
-
-
-const CORAL = '#A86A5A';
+const CORAL = "#A86A5A";
 
 export default function AuthCallback() {
   const router = useRouter();
+  const { code, flow, next } = useLocalSearchParams<{
+    code?: string;
+    flow?: string;
+    next?: string;
+  }>();
   const [error, setError] = useState<string | null>(null);
-  const user = useAuthStore((s) => s.user); // Escuchamos el estado global
+  const [isExchanging, setIsExchanging] = useState(false);
 
-  // 1. Redirigir SOLO cuando el guardia haya cargado completamente el perfil
-  useEffect(() => {
-    if (user) {
-      router.replace('/(app)');
-    }
-  }, [user]);
+  const nextPath = useMemo(() => buildSafeNextPath(next), [next]);
+  const authFlow = flow === "recovery" || flow === "confirmation" ? flow : null;
 
-  // AuthCallback.tsx - Limpia la lógica
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // Cuando el link es válido, Supabase nos loguea automáticamente
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-        // Verificamos si realmente hay una sesión activa
-        if (session) {
-          router.replace('/auth/reset-password');
-        }
+    let isMounted = true;
+
+    const exchangeCode = async () => {
+      if (!code || Array.isArray(code)) {
+        return;
+      }
+
+      setIsExchanging(true);
+      const { error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(code);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (exchangeError) {
+        setError(exchangeError.message);
+      }
+
+      setIsExchanging(false);
+    };
+
+    exchangeCode();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [code]);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) {
+        return;
+      }
+
+      if (event === "PASSWORD_RECOVERY" || authFlow === "recovery") {
+        router.replace(
+          `/auth/reset-password?next=${encodeURIComponent(nextPath)}`,
+        );
+        return;
+      }
+
+      if (event === "SIGNED_IN" && authFlow === "confirmation") {
+        router.replace(
+          `/auth/confirm-account?next=${encodeURIComponent(nextPath)}`,
+        );
+        return;
+      }
+
+      if (event === "SIGNED_IN") {
+        router.replace("/(app)");
+        return;
+      }
+
+      if (session) {
+        router.replace("/(app)");
+        return;
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [authFlow, nextPath, router]);
 
   if (error) {
     return (
       <View style={styles.container}>
-        {/* Lottie para estado de error / enlace expirado */}
         <LottieView
           autoPlay
           loop
@@ -49,7 +104,7 @@ export default function AuthCallback() {
           style={styles.lottieError}
         />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+        <TouchableOpacity onPress={() => router.replace("/(auth)/login")}>
           <Text style={styles.link}>Volver al inicio de sesión</Text>
         </TouchableOpacity>
       </View>
@@ -58,14 +113,16 @@ export default function AuthCallback() {
 
   return (
     <View style={styles.container}>
-      {/* Lottie del perrito para estado de carga */}
       <LottieView
         autoPlay
         loop
         source={LottieDog}
         style={styles.lottieLoading}
       />
-      <Text style={styles.loadingText}>Verificando enlace...</Text>
+      <Text style={styles.loadingText}>
+        {isExchanging ? "Validando sesión segura..." : "Verificando enlace..."}
+      </Text>
+      <ActivityIndicator style={{ marginTop: 12 }} color="#717171" />
     </View>
   );
 }
@@ -73,30 +130,30 @@ export default function AuthCallback() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FCFAF8',
-    padding: 24
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FCFAF8",
+    padding: 24,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#717171'
+    fontWeight: "600",
+    color: "#717171",
   },
   errorText: {
     fontSize: 15,
     color: CORAL,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 20,
     marginTop: 10,
-    fontWeight: '500'
+    fontWeight: "500",
   },
   link: {
     fontSize: 14,
-    color: '#7D9BAB',
-    textDecorationLine: 'underline',
-    fontWeight: '600'
+    color: "#7D9BAB",
+    textDecorationLine: "underline",
+    fontWeight: "600",
   },
   lottieLoading: {
     width: 150,
@@ -106,5 +163,5 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     marginBottom: 10,
-  }
+  },
 });
